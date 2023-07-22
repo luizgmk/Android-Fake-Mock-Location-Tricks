@@ -14,23 +14,25 @@ import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 
 import java.util.Objects;
+import java.util.Timer;
 
-import static com.navigine.mockgps.CustomLocationFragment.latitude;
-import static com.navigine.mockgps.CustomLocationFragment.latitudeText;
-import static com.navigine.mockgps.CustomLocationFragment.longitude;
-import static com.navigine.mockgps.CustomLocationFragment.longitudeText;
+import com.google.android.material.snackbar.Snackbar;
 
 public class SelectOnMapFragment extends Fragment {
 
@@ -51,8 +53,15 @@ public class SelectOnMapFragment extends Fragment {
             new Intent().setComponent(new ComponentName("com.asus.mobilemanager", "com.asus.mobilemanager.MainActivity"))
     };
 
+
     @SuppressLint("StaticFieldLeak")
-    static WebView mapView;
+    static EditText longitude;
+    @SuppressLint("StaticFieldLeak")
+    static EditText latitude;
+
+    static float longitudeText = 139.707341F;
+    static float latitudeText = 35.646691F;
+
     @SuppressLint("StaticFieldLeak")
     private static Button startButton;
 
@@ -62,10 +71,11 @@ public class SelectOnMapFragment extends Fragment {
     private Intent mNotificationIntent;
     private SharedPreferences mPreferences;
     private SharedPreferences.Editor mEditor;
-
     private static boolean isRunning = false;
+    private boolean permissionLocationGranted = false;
 
-    public SelectOnMapFragment() { }
+    public SelectOnMapFragment() {
+    }
 
     @SuppressLint({"SetJavaScriptEnabled", "CommitPrefEdits"})
     @Override
@@ -75,6 +85,10 @@ public class SelectOnMapFragment extends Fragment {
         mContext = view.getContext().getApplicationContext();
         mPreferences = mContext.getSharedPreferences("NAVIGINE_FAKE_GPS", Context.MODE_PRIVATE);
         mEditor = mPreferences.edit();
+
+        ActivityCompat.requestPermissions(requireActivity(), new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION}, 101);
+
 
         boolean mNeedPref = mPreferences.getBoolean("NEED_PREF", true);
 
@@ -89,15 +103,8 @@ public class SelectOnMapFragment extends Fragment {
         mockLocation = new MockLocationImpl(view.getContext());
         mNotificationIntent = new Intent(view.getContext().getApplicationContext(), NotificationService.class);
 
-        mapView = view.findViewById(R.id.web_map);
-
-        WebMap webMap = new WebMap(this);
-        mapView.getSettings().setJavaScriptEnabled(true);
-        mapView.setWebChromeClient(new WebChromeClient());
-        mapView.getSettings().setJavaScriptCanOpenWindowsAutomatically(true);
-        mapView.addJavascriptInterface(webMap, "Android");
-        mapView.loadUrl("file:///android_asset/map.html");
-
+        longitude = view.findViewById(R.id.longitude);
+        latitude = view.findViewById(R.id.latitude);
         startButton = view.findViewById(R.id.start_button);
 
         init();
@@ -105,38 +112,64 @@ public class SelectOnMapFragment extends Fragment {
         return view;
     }
 
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        permissionLocationGranted = ContextCompat.checkSelfPermission(requireActivity(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(requireActivity(), Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+
+        if (requestCode != 101 || !permissionLocationGranted) {
+            Snackbar.make(requireView(), "Location permission has not been granted", Snackbar.LENGTH_LONG);
+        }
+    }
+
+    static void setLatLng(String mLat, String mLng) {
+        latitudeText = Float.parseFloat(mLat);
+        longitudeText = Float.parseFloat(mLng);
+
+        latitude.setText(mLat);
+        longitude.setText(mLng);
+    }
+
+    static String getLat() {
+        return latitude.getText().toString();
+    }
+
+    static String getLng() {
+        return longitude.getText().toString();
+    }
+
+
     private void init() {
         LocationManager locationManager = (LocationManager) mContext.getSystemService(Context.LOCATION_SERVICE);
-        if (ActivityCompat.checkSelfPermission(mContext, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-            ActivityCompat.checkSelfPermission(mContext, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-
+        permissionLocationGranted =
+                ActivityCompat.checkSelfPermission(mContext, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                        ActivityCompat.checkSelfPermission(mContext, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+        if (!permissionLocationGranted)
             return;
-        }
+
         Location networkLoc = Objects.requireNonNull(locationManager).getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
 
         if (networkLoc != null && !isRunning) {
-            longitudeText = networkLoc.getLongitude();
-            latitudeText = networkLoc.getLatitude();
+            longitudeText = (float)networkLoc.getLongitude();
+            latitudeText = (float)networkLoc.getLatitude();
         } else if (!isRunning) {
-            longitudeText = mPreferences.getFloat("LONGITUDE", 1.0f);
-            latitudeText = mPreferences.getFloat("LATITUDE", 1.0f);
+            longitudeText = mPreferences.getFloat("LONGITUDE",  longitudeText);
+            latitudeText = mPreferences.getFloat("LATITUDE", latitudeText);
         }
 
         longitude.setText(String.valueOf(longitudeText));
         latitude.setText(String.valueOf(latitudeText));
-        mapView.loadUrl("javascript:setOnMap(" + latitudeText + "," + longitudeText + ");");
 
         longitude.addTextChangedListener(new TextWatcher() {
             @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 if (s.length() != 0) {
-                    longitudeText = Double.parseDouble(s.toString());
+                    longitudeText = Float.parseFloat(s.toString());
                     if (longitudeText <= 180.0 && longitudeText >= -180.0) {
-                        mapView.loadUrl("javascript:setOnMap(" + latitudeText + "," + longitudeText + ");");
-
                         mEditor.putFloat("LONGITUDE", (float) longitudeText);
                         mEditor.apply();
                         mContext.stopService(mNotificationIntent);
@@ -146,20 +179,20 @@ public class SelectOnMapFragment extends Fragment {
             }
 
             @Override
-            public void afterTextChanged(Editable s) { }
+            public void afterTextChanged(Editable s) {
+            }
         });
 
         latitude.addTextChangedListener(new TextWatcher() {
             @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 if (s.length() != 0) {
-                    latitudeText = Double.parseDouble(s.toString());
+                    latitudeText = Float.parseFloat(s.toString());
                     if (latitudeText <= 90.0 && latitudeText >= -90.0) {
-                        mapView.loadUrl("javascript:setOnMap(" + latitudeText + "," + longitudeText + ");");
-
                         mEditor.putFloat("LATITUDE", (float) latitudeText);
                         mEditor.apply();
                         mContext.stopService(mNotificationIntent);
@@ -169,15 +202,20 @@ public class SelectOnMapFragment extends Fragment {
             }
 
             @Override
-            public void afterTextChanged(Editable s) { }
+            public void afterTextChanged(Editable s) {
+            }
         });
 
         startButton.setText(isRunning ? "Stop" : "Start");
+
         startButton.setOnClickListener(new View.OnClickListener() {
             @SuppressLint("SetTextI18n")
             @Override
             public void onClick(View v) {
-
+                if (!permissionLocationGranted) {
+                    Toast.makeText(v.getContext(), "Location permissions have not been granted. Launch the app again or grant permissions on settings.", Toast.LENGTH_LONG).show();
+                    return;
+                }
                 if (!isMockLocationEnabled()) {
                     Toast.makeText(v.getContext(), "Please turn on Mock Location permission on Developer Settings", Toast.LENGTH_LONG).show();
                     startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
@@ -205,9 +243,9 @@ public class SelectOnMapFragment extends Fragment {
     private boolean isMockLocationEnabled() {
         boolean isMockLocation;
         try {
-            if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 AppOpsManager opsManager = (AppOpsManager) mContext.getSystemService(Context.APP_OPS_SERVICE);
-                isMockLocation = (Objects.requireNonNull(opsManager).checkOp(AppOpsManager.OPSTR_MOCK_LOCATION, android.os.Process.myUid(), BuildConfig.APPLICATION_ID)== AppOpsManager.MODE_ALLOWED);
+                isMockLocation = (Objects.requireNonNull(opsManager).checkOp(AppOpsManager.OPSTR_MOCK_LOCATION, android.os.Process.myUid(), BuildConfig.APPLICATION_ID) == AppOpsManager.MODE_ALLOWED);
             } else {
                 isMockLocation = !android.provider.Settings.Secure.getString(mContext.getContentResolver(), "mock_location").equals("0");
             }

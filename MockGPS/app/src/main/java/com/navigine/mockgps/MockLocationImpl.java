@@ -40,6 +40,10 @@ public class MockLocationImpl {
     }
 
     private void setMock(String provider, double latitude, double longitude) {
+        try {
+            mLocationManager.removeTestProvider(provider);
+        } catch (Exception exception) {
+        }
         mLocationManager.addTestProvider (provider,
                 false,
                 false,
@@ -48,8 +52,8 @@ public class MockLocationImpl {
                 false,
                 true,
                 true,
-                0,
-                5);
+                1,
+                2);
 
         Location newLocation = new Location(provider);
 
